@@ -68,3 +68,23 @@ def test_load_config_missing_required_field(tmp_path):
     bad_config.write_text("sources:\n  - name: test_db\n    tables: []")
     with pytest.raises(ValueError, match="data_subject"):
         load_sources_config(bad_config)
+
+
+def test_invalid_load_strategy(tmp_path):
+    bad_config = tmp_path / "bad.yaml"
+    bad_config.write_text(
+        "sources:\n  - name: db\n    data_subject: x\n    schema: public\n"
+        "    tables:\n      - name: t\n        load_strategy: bogus"
+    )
+    with pytest.raises(ValueError, match="Invalid load_strategy"):
+        load_sources_config(bad_config)
+
+
+def test_incremental_without_cursor_column(tmp_path):
+    bad_config = tmp_path / "bad.yaml"
+    bad_config.write_text(
+        "sources:\n  - name: db\n    data_subject: x\n    schema: public\n"
+        "    tables:\n      - name: t\n        load_strategy: incremental"
+    )
+    with pytest.raises(ValueError, match="cursor_column"):
+        load_sources_config(bad_config)

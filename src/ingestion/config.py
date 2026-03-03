@@ -23,6 +23,7 @@ class SourceConfig:
 
 _REQUIRED_SOURCE_FIELDS = ("name", "data_subject", "schema", "tables")
 _REQUIRED_TABLE_FIELDS = ("name", "load_strategy")
+_VALID_LOAD_STRATEGIES = ("full", "incremental")
 
 
 def load_sources_config(config_path: Path) -> list[SourceConfig]:
@@ -33,7 +34,7 @@ def load_sources_config(config_path: Path) -> list[SourceConfig]:
         raw = yaml.safe_load(f)
 
     sources = []
-    for raw_source in raw.get("sources", []):
+    for raw_source in raw.get("sources") or []:
         for field in _REQUIRED_SOURCE_FIELDS:
             if field not in raw_source:
                 raise ValueError(
@@ -47,10 +48,21 @@ def load_sources_config(config_path: Path) -> list[SourceConfig]:
                     raise ValueError(
                         f"Missing required field '{field}' in table config: {raw_table}"
                     )
+            strategy = raw_table["load_strategy"]
+            if strategy not in _VALID_LOAD_STRATEGIES:
+                raise ValueError(
+                    f"Invalid load_strategy '{strategy}' in table config: {raw_table}. "
+                    f"Must be one of {_VALID_LOAD_STRATEGIES}"
+                )
+            if strategy == "incremental" and not raw_table.get("cursor_column"):
+                raise ValueError(
+                    f"Table '{raw_table['name']}' has load_strategy 'incremental' "
+                    f"but no cursor_column specified"
+                )
             tables.append(
                 TableConfig(
                     name=raw_table["name"],
-                    load_strategy=raw_table["load_strategy"],
+                    load_strategy=strategy,
                     cursor_column=raw_table.get("cursor_column"),
                     initial_value=raw_table.get("initial_value"),
                 )
