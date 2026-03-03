@@ -8,24 +8,23 @@ from src.ingestion.config import SourceConfig, load_sources_config
 
 
 def build_layout() -> str:
-    return "{data_subject}/{src_db}/{src_schema}/{table_name}/{DD}-{MM}-{YYYY}.{ext}"
+    return "{table_name}/{DD}-{MM}-{YYYY}.{ext}"
+
+
+def build_bucket_url(base_url: str, source_config: SourceConfig) -> str:
+    return f"{base_url}/{source_config.data_subject}/{source_config.name}"
 
 
 def build_pipeline(source_config: SourceConfig, bucket_url: str) -> dlt.Pipeline:
     dest = filesystem(
-        bucket_url=bucket_url,
+        bucket_url=build_bucket_url(bucket_url, source_config),
         layout=build_layout(),
-        extra_placeholders={
-            "data_subject": source_config.data_subject,
-            "src_db": source_config.name,
-            "src_schema": source_config.schema,
-        },
     )
 
     return dlt.pipeline(
         pipeline_name=f"bronze_{source_config.name}",
         destination=dest,
-        dataset_name="bronze",
+        dataset_name=source_config.schema,
     )
 
 

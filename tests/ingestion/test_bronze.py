@@ -1,6 +1,6 @@
 import pytest
 from src.ingestion.config import SourceConfig, TableConfig
-from src.ingestion.bronze import build_pipeline, build_layout, run_source_ingestion
+from src.ingestion.bronze import build_pipeline, build_layout, build_bucket_url
 
 
 @pytest.fixture
@@ -23,9 +23,6 @@ def source_config():
 
 def test_build_layout():
     layout = build_layout()
-    assert "{data_subject}" in layout
-    assert "{src_db}" in layout
-    assert "{src_schema}" in layout
     assert "{table_name}" in layout
     assert "{DD}" in layout
     assert "{MM}" in layout
@@ -33,14 +30,12 @@ def test_build_layout():
     assert layout.endswith(".{ext}")
 
 
+def test_build_bucket_url(source_config):
+    url = build_bucket_url("data/bronze", source_config)
+    assert url == "data/bronze/crm/test_pg"
+
+
 def test_build_pipeline_returns_dlt_pipeline(source_config):
     pipeline = build_pipeline(source_config, bucket_url="/tmp/test_bronze")
     assert pipeline.pipeline_name == "bronze_test_pg"
     assert pipeline.destination.destination_name == "filesystem"
-
-
-def test_build_pipeline_extra_placeholders(source_config):
-    pipeline = build_pipeline(source_config, bucket_url="/tmp/test_bronze")
-    # Verify the pipeline was created (destination config is internal to dlt,
-    # so we just confirm it doesn't raise)
-    assert pipeline is not None
