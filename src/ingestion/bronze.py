@@ -28,12 +28,26 @@ def build_pipeline(source_config: SourceConfig, bucket_url: str) -> dlt.Pipeline
     )
 
 
+def _is_first_run(pipeline: dlt.Pipeline) -> bool:
+    """Check if this pipeline has been run before by looking for existing state."""
+    try:
+        return pipeline.state.get("default_schema_name") is None
+    except Exception:
+        return True
+
+
 def run_source_ingestion(
     source_config: SourceConfig,
     bucket_url: str,
     credentials: str,
 ) -> None:
     pipeline = build_pipeline(source_config, bucket_url)
+    first_run = _is_first_run(pipeline)
+
+    if first_run:
+        print(f"[{source_config.name}] First run detected — performing full load")
+    else:
+        print(f"[{source_config.name}] Subsequent run — using configured load strategies")
 
     table_names = [t.name for t in source_config.tables]
     source = sql_database(
@@ -43,15 +57,17 @@ def run_source_ingestion(
         backend="pyarrow",
     )
 
-    for table_config in source_config.tables:
-        if table_config.load_strategy == "incremental" and table_config.cursor_column:
-            resource = source.resources[table_config.name]
-            resource.apply_hints(
-                incremental=dlt.sources.incremental(
-                    table_config.cursor_column,
-                    initial_value=table_config.initial_value,
-                ),
-            )
+    # On subsequent runs, apply incremental hints for tables configured as incremental
+    if not first_run:
+        for table_config in source_config.tables:
+            if table_config.load_strategy == "incremental" and table_config.cursor_column:
+                resource = source.resources[table_config.name]
+                resource.apply_hints(
+                    incremental=dlt.sources.incremental(
+                        table_config.cursor_column,
+                        initial_value=table_config.initial_value,
+                    ),
+                )
 
     load_info = pipeline.run(source, write_disposition="append", loader_file_format="parquet")
     print(f"[{source_config.name}] Load complete: {load_info}")
