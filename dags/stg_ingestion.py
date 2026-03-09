@@ -56,42 +56,43 @@ def _get_source_name(kwargs) -> str | None:
     return None
 
 
-def load_table_to_stg_temp(source_name: str, table_name: str, **kwargs):
+def load_subject_tables(source_name: str, data_subject: str, **kwargs):
     from dlt.sources.filesystem import readers
 
     sources = load_sources_config(CONFIG_PATH)
     credentials = _load_warehouse_credentials()
     source_config = next(s for s in sources if s.name == source_name)
-    table_config = next(t for t in source_config.tables if t.name == table_name)
+    tables = [t for t in source_config.tables if t.data_subject == data_subject]
 
     pipeline = build_stg_pipeline(source_config, credentials)
 
-    parquet_dir = get_parquet_dir(
-        bronze_base_url=BRONZE_BASE_URL,
-        data_subject=table_config.data_subject,
-        source_name=source_config.name,
-        schema=source_config.schema,
-        table_name=table_config.name,
-    )
-
-    recent_files = get_recent_parquet_files(parquet_dir, RETENTION_DAYS)
-
-    if not recent_files:
-        print(f"[stg] No recent parquet files for {table_config.name}, skipping")
-        return
-
-    stg_temp_name = f"temp_{table_config.data_subject}_{source_config.name}_{table_config.name}"
-    for i, parquet_file in enumerate(recent_files):
-        disposition = "replace" if i == 0 else "append"
-        reader = readers(
-            bucket_url=str(parquet_file.parent),
-            file_glob=parquet_file.name,
-        ).read_parquet()
-        load_info = pipeline.run(
-            reader.with_name(stg_temp_name),
-            write_disposition=disposition,
+    for table_config in tables:
+        parquet_dir = get_parquet_dir(
+            bronze_base_url=BRONZE_BASE_URL,
+            data_subject=table_config.data_subject,
+            source_name=source_config.name,
+            schema=source_config.schema,
+            table_name=table_config.name,
         )
-        print(f"[stg] Loaded {parquet_file.name} → {stg_temp_name} ({disposition}): {load_info}")
+
+        recent_files = get_recent_parquet_files(parquet_dir, RETENTION_DAYS)
+
+        if not recent_files:
+            print(f"[stg] No recent parquet files for {table_config.name}, skipping")
+            continue
+
+        stg_temp_name = f"temp_{table_config.data_subject}_{source_config.name}_{table_config.name}"
+        for i, parquet_file in enumerate(recent_files):
+            disposition = "replace" if i == 0 else "append"
+            reader = readers(
+                bucket_url=str(parquet_file.parent),
+                file_glob=parquet_file.name,
+            ).read_parquet()
+            load_info = pipeline.run(
+                reader.with_name(stg_temp_name),
+                write_disposition=disposition,
+            )
+            print(f"[stg] Loaded {parquet_file.name} → {stg_temp_name} ({disposition}): {load_info}")
 
 
 def run_dbt_stg(**kwargs):
@@ -133,28 +134,23 @@ with DAG(
     max_active_tasks=1,
     tags=["stg", "ingestion", "dbt"],
 ) as dag:
-    from collections import defaultdict
-    from airflow.utils.task_group import TaskGroup
-
     sources = load_sources_config(CONFIG_PATH) if CONFIG_PATH.exists() else []
 
-    # Group tables by data_subject
-    tables_by_subject: dict[str, list[tuple]] = defaultdict(list)
+    # One task per source + data_subject combination
+    load_tasks = []
+    seen = set()
     for source in sources:
         for table in source.tables:
-            tables_by_subject[table.data_subject].append((source, table))
-
-    # Create a TaskGroup per data_subject
-    group_tasks = []
-    for data_subject, entries in tables_by_subject.items():
-        with TaskGroup(group_id=data_subject) as group:
-            for source, table in entries:
-                PythonOperator(
-                    task_id=f"load_temp_{source.name}_{table.name}",
-                    python_callable=load_table_to_stg_temp,
-                    op_kwargs={"source_name": source.name, "table_name": table.name},
-                )
-        group_tasks.append(group)
+            key = (source.name, table.data_subject)
+            if key in seen:
+                continue
+            seen.add(key)
+            task = PythonOperator(
+                task_id=f"load_{source.name}__{table.data_subject}",
+                python_callable=load_subject_tables,
+                op_kwargs={"source_name": source.name, "data_subject": table.data_subject},
+            )
+            load_tasks.append(task)
 
     dbt_run = PythonOperator(
         task_id="dbt_run_stg",
@@ -171,4 +167,4 @@ with DAG(
         trigger_dag_id="silver_transform",
     )
 
-    group_tasks >> dbt_run >> dbt_test >> trigger_silver
+    load_tasks >> dbt_run >> dbt_test >> trigger_silver
