@@ -1,0 +1,134 @@
+@startuml Source to Bronze
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+participant "sources.yaml" as Config
+participant "dlt Pipeline" as DLT
+participant "Source Database" as Source
+participant "Bronze Layer\n(Local Parquet)" as Bronze
+
+DLT -> Config : load_sources_config()
+Config --> DLT : SourceConfig (tables, schema, data_subject)
+
+DLT -> DLT : _group_tables_by_data_subject()
+note right : e.g. customer: [crm_lead, res_partner]\ncrm: [project_task]
+
+loop Each data_subject group
+    DLT -> DLT : build_pipeline(source, bucket_url, data_subject)
+    note right : pipeline_name: bronze_{source}_{subject}\nlayout: {table}/{DD-MM-YYYY}.parquet
+
+    DLT -> DLT : Check _is_first_run()
+
+    alt First run
+        note right of DLT : Full load for all tables
+    else Subsequent run
+        loop Each incremental table
+            DLT -> DLT : apply_hints(incremental(cursor_col))
+            note right : Tracks cursor state locally\nonly fetches rows > last cursor
+        end
+    end
+
+    DLT -> Source : sql_database(credentials, schema,\ntable_names, backend=pyarrow)
+    note right : SELECT * FROM {schema}.{table}\n[WHERE cursor > last_value]
+    Source --> DLT : Result rows (PyArrow)
+
+    DLT -> Bronze : pipeline.run(write_disposition=append,\nformat=parquet)
+    note right : data/bronze/{subject}/{source}\n/{schema}/{table}/{DD-MM-YYYY}.parquet
+end
+
+@enduml
+
+
+
+@startuml Bronze to Stg
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+participant "sources.yaml" as Config
+participant "dlt Pipeline" as DLT
+participant "Bronze Layer\n(Local Parquet)" as Bronze
+participant "stg_temp\n(Postgres)" as StgTemp
+
+participant "dbt" as DBT
+participant "stg\n(Postgres)" as Stg
+
+DLT -> Config : load_sources_config()
+Config --> DLT : SourceConfig (tables, schema, data_subject)
+
+loop Each table
+    DLT -> Bronze : get_recent_parquet_files(retention=7)
+    Bronze --> DLT : [10-03-2026.parquet, 09-03-2026.parquet, ...]
+
+      loop Each parquet file (oldest first)
+          DLT -> Bronze : readers(bucket_url, file_glob).read_parquet()
+          Bronze --> DLT : Arrow table
+
+          DLT -> StgTemp : pipeline.run(reader.with_name(\nstg_temp_name), disposition)
+      end
+  
+end
+
+
+DBT -> StgTemp : SELECT DISTINCT ON (id) *\nFROM stg_temp.temp_{subject}_{source}_{table}\nORDER BY id, _dlt_load_id DESC
+StgTemp --> DBT : Deduplicated rows (latest per record)
+
+DBT -> Stg : Materialize as table
+
+DBT -> Stg : dbt test (unique, not_null)
+
+@enduml
+
+
+@startuml Stg to Silver
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+participant "stg\n(Postgres)" as Stg
+participant "dbt" as DBT
+participant "silver\n(Postgres)" as Silver
+
+== Snapshot: silver_customer_dim_customer (SCD Type 2) ==
+
+DBT -> Stg : SELECT id, name, phone, email,\nis_company, write_date\nFROM stg.stg_customer_postgres_crm_res_partner
+
+Stg --> DBT : Current customer records
+
+DBT -> Silver : dbt snapshot (strategy=timestamp,\nupdated_at=write_date)
+note right : Compares against existing silver rows\nby unique_key (id)
+
+alt New record (id not in silver)
+    note right of Silver : INSERT with\ndbt_valid_from = now\ndbt_valid_to = null
+else Existing record with changed write_date
+    note right of Silver : Close old row: SET dbt_valid_to = now\nINSERT new row: dbt_valid_from = now,\ndbt_valid_to = null
+else No change
+    note right of Silver : No action
+end
+
+note over Silver : silver.silver_customer_dim_customer\nFull history — current rows have\ndbt_valid_to = null
+
+== Dimension: silver_dim_date (runs parallel with snapshot) ==
+
+DBT -> Silver : generate_series('2020-01-01', '2030-12-31', '1 day')
+note right : Materialized as table\nColumns: date_key, date, year,\nmonth, quarter, day_of_week, is_weekend
+
+note over Silver : silver.silver_dim_date
+
+== Fact: silver_crm_fact_lead (depends on snapshot + dim_date) ==
+
+DBT -> Stg : SELECT id, partner_id, create_date,\nexpected_revenue, prorated_revenue\nFROM stg.stg_customer_postgres_crm_crm_lead
+Stg --> DBT : Lead records
+
+DBT -> Silver : SELECT dbt_scd_id, id\nFROM silver_customer_dim_customer\nWHERE dbt_valid_to IS NULL
+Silver --> DBT : Current customer keys
+
+DBT -> Silver : SELECT date_key, date\nFROM silver_dim_date
+Silver --> DBT : Date keys
+
+DBT -> Silver : JOIN leads + customers + dates\n-> Materialize fact table (incremental,\nunique_key=lead_id)
+note right : silver.silver_crm_fact_lead\nColumns: lead_id, date_key,\ncustomer_key, expected_revenue,\nprorated_revenue
+
+== Test ==
+
+DBT -> Silver : dbt test (unique, not_null)
+
+@enduml

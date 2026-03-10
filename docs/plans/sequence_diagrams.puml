@@ -1,0 +1,124 @@
+@startuml Source to Bronze
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+participant "sources.yaml" as Config
+participant "dlt Pipeline" as DLT
+participant "Source Database" as Source
+participant "Bronze Layer\n(Local Parquet)" as Bronze
+
+DLT -> Config : Read source & table definitions
+Config --> DLT : Tables, schemas, data subjects
+
+DLT -> DLT : Group tables by data subject
+
+loop Each data_subject group
+    DLT -> DLT : Initialize pipeline for this group
+
+
+      loop Each incremental table
+          DLT -> DLT : Set incremental cursor filter
+      end
+
+
+    DLT -> Source : Extract table data as PyArrow
+    Source --> DLT : Result rows
+
+    DLT -> Bronze : Write parquet file
+end
+
+@enduml
+
+
+
+@startuml Bronze to Stg
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+participant "sources.yaml" as Config
+participant "dlt Pipeline" as DLT
+participant "Bronze Layer\n(Local Parquet)" as Bronze
+participant "stg_temp\n(Postgres)" as StgTemp
+
+participant "dbt" as DBT
+participant "stg\n(Postgres)" as Stg
+
+DLT -> Config : Read source & table definitions
+Config --> DLT : Tables, schemas, data subjects
+
+loop Each table
+    DLT -> Bronze : Find parquet files from last 7 days
+    Bronze --> DLT : List of recent parquet files
+
+      loop Each parquet file (oldest first)
+          DLT -> Bronze : Read parquet as Arrow table
+          Bronze --> DLT : Arrow table
+
+          DLT -> StgTemp : Load into stg_temp\n(1st file replaces, rest append)
+      end
+
+end
+
+
+DBT -> StgTemp : Deduplicate: keep latest version\nper record using _dlt_load_id
+StgTemp --> DBT : One row per unique id
+
+DBT -> Stg : Materialize deduplicated table
+
+DBT -> Stg : Run data quality tests
+
+@enduml
+
+
+@startuml Stg to Silver
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+participant "stg\n(Postgres)" as Stg
+participant "dbt" as DBT
+participant "silver\n(Postgres)" as Silver
+
+== Snapshot: silver_customer_dim_customer (SCD Type 2) ==
+
+DBT -> Stg : Read current customer records
+Stg --> DBT : Customer rows (id, name, phone, email, ...)
+
+DBT -> Silver : Snapshot with SCD Type 2\n(track changes by write_date)
+note right : Compares against existing silver rows\nby unique_key (id)
+
+alt New record (id not in silver)
+    note right of Silver : INSERT with\ndbt_valid_from = now\ndbt_valid_to = null
+else Existing record with changed write_date
+    note right of Silver : Close old row: SET dbt_valid_to = now\nINSERT new row: dbt_valid_from = now,\ndbt_valid_to = null
+else No change
+    note right of Silver : No action
+end
+
+note over Silver : silver.silver_customer_dim_customer\nFull history — current rows have\ndbt_valid_to = null
+
+== Dimension: silver_dim_date (runs parallel with snapshot) ==
+
+DBT -> Silver : Generate date calendar (2020–2030)
+note right : Materialized as table\nColumns: date_key, date, year,\nmonth, quarter, day_of_week, is_weekend
+
+note over Silver : silver.silver_dim_date
+
+== Fact: silver_crm_fact_lead (depends on snapshot + dim_date) ==
+
+DBT -> Stg : Read lead records
+Stg --> DBT : Leads (id, partner_id, create_date, revenue, ...)
+
+DBT -> Silver : Look up current customer keys\n(where dbt_valid_to is null)
+Silver --> DBT : Customer surrogate keys
+
+DBT -> Silver : Look up date keys
+Silver --> DBT : Date surrogate keys
+
+DBT -> Silver : Join leads + customers + dates,\nmaterialize fact table (incremental)
+note right : silver.silver_crm_fact_lead\nColumns: lead_id, date_key,\ncustomer_key, expected_revenue,\nprorated_revenue
+
+== Test ==
+
+DBT -> Silver : Run data quality tests
+
+@enduml
