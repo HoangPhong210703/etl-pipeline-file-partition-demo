@@ -20,14 +20,13 @@ from src.ingestion.config import load_sources_config
 from src.ingestion.stg import (
     build_stg_pipeline,
     get_parquet_dir,
-    get_recent_parquet_files,
+    get_latest_parquet_file,
 )
 
 CONFIG_PATH = Path("/opt/airflow/config/sources.yaml")
 SECRETS_PATH = Path("/opt/airflow/.dlt/secrets.toml")
 BRONZE_BASE_URL = "/opt/airflow/data/bronze"
 DBT_PROJECT_DIR = Path("/opt/airflow/dbt")
-RETENTION_DAYS = 7
 
 
 def _load_warehouse_credentials() -> str:
@@ -75,24 +74,22 @@ def load_subject_tables(source_name: str, data_subject: str, **kwargs):
             table_name=table_config.name,
         )
 
-        recent_files = get_recent_parquet_files(parquet_dir, RETENTION_DAYS)
+        latest_file = get_latest_parquet_file(parquet_dir)
 
-        if not recent_files:
-            print(f"[stg] No recent parquet files for {table_config.name}, skipping")
+        if not latest_file:
+            print(f"[stg] No parquet files for {table_config.name}, skipping")
             continue
 
-        stg_temp_name = f"temp_{table_config.data_subject}_{source_config.name}_{table_config.name}"
-        for i, parquet_file in enumerate(recent_files):
-            disposition = "replace" if i == 0 else "append"
-            reader = readers(
-                bucket_url=str(parquet_file.parent),
-                file_glob=parquet_file.name,
-            ).read_parquet()
-            load_info = pipeline.run(
-                reader.with_name(stg_temp_name),
-                write_disposition=disposition,
-            )
-            print(f"[stg] Loaded {parquet_file.name} → {stg_temp_name} ({disposition}): {load_info}")
+        stg_table_name = f"stg_{table_config.data_subject}_{source_config.name}_{table_config.name}"
+        reader = readers(
+            bucket_url=str(latest_file.parent),
+            file_glob=latest_file.name,
+        ).read_parquet()
+        load_info = pipeline.run(
+            reader.with_name(stg_table_name),
+            write_disposition="replace",
+        )
+        print(f"[stg] Loaded {latest_file.name} → {stg_table_name}: {load_info}")
 
 
 def run_dbt_stg(**kwargs):
@@ -127,7 +124,7 @@ def run_dbt_test_stg(**kwargs):
 
 with DAG(
     dag_id="stg_ingestion",
-    description="Load parquet per table into stg_temp, run dbt stg models and tests",
+    description="Load latest parquet into stg, run dbt stg models and tests",
     schedule=None,
     start_date=datetime(2024, 1, 1),
     catchup=False,

@@ -38,32 +38,21 @@ skinparam responseMessageBelowArrow true
 participant "sources.yaml" as Config
 participant "dlt Pipeline" as DLT
 participant "Bronze Layer\n(Local Parquet)" as Bronze
-participant "stg_temp\n(Postgres)" as StgTemp
-
-participant "dbt" as DBT
 participant "stg\n(Postgres)" as Stg
+participant "dbt" as DBT
 
 DLT -> Config : Read source & table definitions
 Config --> DLT : Tables, schemas, data subjects
 
 loop Each table
-    DLT -> Bronze : Find parquet files from last 7 days
-    Bronze --> DLT : List of recent parquet files
+    DLT -> Bronze : Find latest parquet file
+    Bronze --> DLT : Most recent parquet file
 
-      loop Each parquet file (oldest first)
-          DLT -> Bronze : Read parquet as Arrow table
-          Bronze --> DLT : Arrow table
+    DLT -> Bronze : Read parquet as Arrow table
+    Bronze --> DLT : Arrow table
 
-          DLT -> StgTemp : Load into stg_temp\n(1st file replaces, rest append)
-      end
-
+    DLT -> Stg : Load into stg (replace)
 end
-
-
-DBT -> StgTemp : Deduplicate: keep latest version\nper record using _dlt_load_id
-StgTemp --> DBT : One row per unique id
-
-DBT -> Stg : Materialize deduplicated table
 
 DBT -> Stg : Run data quality tests
 

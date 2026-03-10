@@ -18,20 +18,13 @@ def get_parquet_dir(
     return f"{bronze_base_url}/{data_subject}/{source_name}/{schema}/{table_name}"
 
 
-def get_recent_parquet_files(parquet_dir: str, retention_days: int = 7) -> list[Path]:
-    """Return parquet files from last N days, sorted oldest first."""
-    today = datetime.date.today()
-    recent_dates = {
-        (today - datetime.timedelta(days=i)).strftime("%d-%m-%Y")
-        for i in range(retention_days)
-    }
+def get_latest_parquet_file(parquet_dir: str) -> Path | None:
+    """Return the most recent parquet file in the directory, or None."""
     base = Path(parquet_dir)
     if not base.exists():
-        return []
-    return sorted(
-        f for f in base.glob("*.parquet")
-        if any(f.name.startswith(d) for d in recent_dates)
-    )
+        return None
+    files = sorted(base.glob("*.parquet"), reverse=True)
+    return files[0] if files else None
 
 
 def build_stg_pipeline(
@@ -43,7 +36,7 @@ def build_stg_pipeline(
     return dlt.pipeline(
         pipeline_name=f"stg_{source_config.name}",
         destination=dest,
-        dataset_name="stg_temp",
+        dataset_name="stg",
     )
 
 
@@ -66,7 +59,6 @@ def run_stg_ingestion(
     source_config: SourceConfig,
     bronze_base_url: str,
     warehouse_credentials: str,
-    retention_days: int = 7,
 ) -> None:
     results: list[tuple] = []
     pipeline = build_stg_pipeline(source_config, warehouse_credentials)
@@ -80,27 +72,25 @@ def run_stg_ingestion(
             table_name=table_config.name,
         )
 
-        recent_files = get_recent_parquet_files(parquet_dir, retention_days)
+        latest_file = get_latest_parquet_file(parquet_dir)
 
-        if not recent_files:
-            print(f"[stg_{source_config.name}] No recent parquet files for {table_config.name}, skipping")
-            results.append((table_config.name, "skipped", 0, "no recent parquet files"))
+        if not latest_file:
+            print(f"[stg_{source_config.name}] No parquet files for {table_config.name}, skipping")
+            results.append((table_config.name, "skipped", 0, "no parquet files"))
             continue
 
         try:
-            for i, parquet_file in enumerate(recent_files):
-                disposition = "replace" if i == 0 else "append"
-                reader = readers(
-                    bucket_url=str(parquet_file.parent),
-                    file_glob=parquet_file.name,
-                ).read_parquet()
-                stg_temp_name = f"temp_{table_config.data_subject}_{source_config.name}_{table_config.name}"
-                load_info = pipeline.run(
-                    reader.with_name(stg_temp_name),
-                    write_disposition=disposition,
-                )
-                print(f"[stg_{source_config.name}] Loaded {parquet_file.name} → {table_config.name} ({disposition}): {load_info}")
-            results.append((table_config.name, "loaded", len(recent_files), ""))
+            reader = readers(
+                bucket_url=str(latest_file.parent),
+                file_glob=latest_file.name,
+            ).read_parquet()
+            stg_table_name = f"stg_{table_config.data_subject}_{source_config.name}_{table_config.name}"
+            load_info = pipeline.run(
+                reader.with_name(stg_table_name),
+                write_disposition="replace",
+            )
+            print(f"[stg_{source_config.name}] Loaded {latest_file.name} → {stg_table_name}: {load_info}")
+            results.append((table_config.name, "loaded", 1, ""))
         except Exception as e:
             print(f"[stg_{source_config.name}] FAILED loading {table_config.name}: {e}")
             results.append((table_config.name, "failed", 0, str(e)))
@@ -112,10 +102,9 @@ def run_all_stg_sources(
     config_path: Path,
     bronze_base_url: str,
     warehouse_credentials: str,
-    retention_days: int = 7,
 ) -> None:
     sources = load_sources_config(config_path)
 
     for source_config in sources:
         print(f"[stg_{source_config.name}] Starting stg ingestion...")
-        run_stg_ingestion(source_config, bronze_base_url, warehouse_credentials, retention_days)
+        run_stg_ingestion(source_config, bronze_base_url, warehouse_credentials)

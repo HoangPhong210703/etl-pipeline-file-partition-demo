@@ -92,12 +92,11 @@ def main():
     clear_parquet = ask("Bronze parquet files (data/bronze/)?")
     clear_dest_state = ask("dlt destination state (_dlt_pipeline_state/ folders in bronze)?")
     clear_local_state = ask("dlt local state inside Docker worker (~/.dlt/pipelines/)?")
-    clear_stg_temp = ask("stg_temp schema in Postgres?")
     clear_stg = ask("stg schema in Postgres?")
     clear_silver = ask("silver schema in Postgres?")
 
     nothing = not any([clear_parquet, clear_dest_state, clear_local_state,
-                       clear_stg_temp, clear_stg, clear_silver])
+                       clear_stg, clear_silver])
     if nothing:
         print("\nNothing selected. Exiting.")
         return
@@ -117,8 +116,6 @@ def main():
         clear_dlt_local_state()
 
     postgres_schemas = []
-    if clear_stg_temp:
-        postgres_schemas.append("stg_temp")
     if clear_stg:
         postgres_schemas.append("stg")
     if clear_silver:
