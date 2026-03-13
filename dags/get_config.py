@@ -81,4 +81,4 @@ with DAG(
         conf="{{ ti.xcom_pull(task_ids='get_config') }}",
     )
 
-    get_config_task >> processing_trigger
+    get_config_task >> processing_trigger # type: ignore

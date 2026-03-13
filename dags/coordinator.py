@@ -116,6 +116,6 @@ with DAG(
 
     # Sensors and timer all feed into coor
     for sensor in sensors:
-        sensor >> coor_task
-    wait_window >> coor_task
-    coor_task >> get_config_trigger
+        sensor >> coor_task # type: ignore
+    wait_window >> coor_task # type: ignore
+    coor_task >> get_config_trigger # type: ignore

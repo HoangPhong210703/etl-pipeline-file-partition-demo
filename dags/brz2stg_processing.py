@@ -80,4 +80,4 @@ with DAG(
         conf="{{ ti.xcom_pull(task_ids='sequence_loads') }}",
     )
 
-    read_config_task >> sequence_loads_task >> ingest_trigger
+    read_config_task >> sequence_loads_task >> ingest_trigger # type: ignore
