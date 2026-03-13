@@ -56,7 +56,7 @@ def sequence_loads(**kwargs):
 
 
 with DAG(
-    dag_id="processing",
+    dag_id="brz2stg_processing",
     description="Sequence table loads and trigger ingestion",
     schedule=None,
     start_date=datetime(2024, 1, 1),
