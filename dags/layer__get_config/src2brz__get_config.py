@@ -1,7 +1,6 @@
-"""Get config DAG — reads the appropriate config file based on the layer,
-filters by active data subjects, and triggers processing."""
+"""Get config DAG — reads CSV config for a specific (data_subject, source) pair
+and triggers processing."""
 
-import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -18,14 +17,14 @@ CONFIG_FILES = {
 
 
 def get_config(**kwargs):
-    """Read the layer config CSV, filter by active data subjects and optional source from coordinator."""
+    """Read the layer config CSV, filter by the single data_subject + source from coordinator."""
     from src.ingestion.config import load_csv_config, get_active_tables
 
     dag_run = kwargs["dag_run"]
     conf = dag_run.conf or {}
     layer = conf.get("layer", "src2brz")
-    active_subjects = conf.get("data_subjects", [])
-    source_filter = conf.get("source")  # Optional source filter
+    data_subject = conf.get("data_subject")
+    source = conf.get("source")
 
     csv_path = CONFIG_FILES.get(layer)
     if not csv_path or not csv_path.exists():
@@ -34,18 +33,15 @@ def get_config(**kwargs):
     all_configs = load_csv_config(csv_path)
     active = get_active_tables(all_configs)
 
-    # Filter to only the data subjects the coordinator approved
-    if active_subjects:
-        active = [c for c in active if c.data_subject in active_subjects]
-    
-    # Filter to specific source if provided
-    if source_filter:
-        active = [c for c in active if c.source_name == source_filter]
+    # Filter to this specific (data_subject, source) pair
+    if data_subject:
+        active = [c for c in active if c.data_subject == data_subject]
+    if source:
+        active = [c for c in active if c.source_name == source]
 
-    tables_info = [
+    tables = [
         {
             "id": c.id,
-            "layer__data_subject__src": c.layer__data_subject__src,
             "table_name": c.table_name,
             "table_schema_stg": c.table_schema_stg,
             "source_name": c.source_name,
@@ -60,21 +56,20 @@ def get_config(**kwargs):
         for c in active
     ]
 
-    print(f"[get_config] Layer: {layer}")
-    if source_filter:
-        print(f"[get_config] Source filter: {source_filter}")
-    print(f"[get_config] Active tables: {len(tables_info)} "
-          f"across subjects: {sorted(set(c['data_subject'] for c in tables_info))}")
+    print(f"[get_config] layer={layer}, data_subject={data_subject}, source={source}")
+    print(f"[get_config] Active tables: {len(tables)}")
 
-    result = {"layer": layer, "data_subjects": active_subjects, "tables": tables_info}
-    if source_filter:
-        result["source"] = source_filter
-    return result
+    return {
+        "layer": layer,
+        "data_subject": data_subject,
+        "source": source,
+        "tables": tables,
+    }
 
 
 with DAG(
     dag_id="src2brz_get_config",
-    description="Read layer config file and trigger processing",
+    description="Read config for a (data_subject, source) pair and trigger processing",
     schedule=None,
     start_date=datetime(2024, 1, 1),
     catchup=False,
@@ -92,4 +87,4 @@ with DAG(
         conf="{{ ti.xcom_pull(task_ids='get_config') }}",
     )
 
-    get_config_task >> processing_trigger # type: ignore
+    get_config_task >> processing_trigger  # type: ignore

@@ -13,3 +13,4 @@ dbt/logs/
 .dlt/secrets.toml
 .dlt/pipelines/
 .claude
+pseudocode.py
