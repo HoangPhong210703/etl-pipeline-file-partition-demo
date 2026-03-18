@@ -1,2 +1,4 @@
 [normalize.data_writer]
 disable_compression = false
+[schema]
+naming = "direct"

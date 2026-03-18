@@ -11,7 +11,8 @@ with DAG(
     schedule=None,
     start_date=datetime(2024, 1, 1),
     catchup=False,
-    tags=["button", "brz2stg", "accounting", "postgres_timesheet"],
+    tags=['button', 'brz2stg', 'accounting', 'postgres_timesheet'],
+    max_active_runs=1,
 ) as dag:
 
     trigger_coor = TriggerDagRunOperator(

@@ -39,7 +39,6 @@ def build_stg_pipeline(
         pipeline_name=f"stg_{source_name}_{data_subject}",
         destination=dest,
         dataset_name=dataset,
-        naming="direct",
     )
 
 

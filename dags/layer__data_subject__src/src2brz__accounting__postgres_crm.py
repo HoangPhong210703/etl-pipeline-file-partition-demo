@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from airflow import DAG #type: ignore
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator #type: ignore
+from airflow import DAG  # type: ignore
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator  # type: ignore
 
 DAG_ID = "src2brz__accounting__postgres_crm"
 
@@ -11,7 +11,8 @@ with DAG(
     schedule=None,
     start_date=datetime(2024, 1, 1),
     catchup=False,
-    tags=["button", "src2brz", "accounting", "postgres_crm"],
+    tags=['button', 'src2brz', 'accounting', 'postgres_crm'],
+    max_active_runs=1,
 ) as dag:
 
     trigger_coor = TriggerDagRunOperator(
