@@ -16,6 +16,6 @@ select
     email,
     is_company,
     write_date
-from {{ source('stg__accounting__postgres_crm', 'res_partner') }}
+from {{ source('stg_accounting_postgres_crm', 'res_partner') }}
 
 {% endsnapshot %}

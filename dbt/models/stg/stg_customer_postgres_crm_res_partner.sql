@@ -2,5 +2,5 @@
 
 select distinct on (id)
     *
-from {{ source('stg__accounting__postgres_crm', 'res_partner') }}
+from {{ source('stg_accounting_postgres_crm', 'res_partner') }}
 order by id, _dlt_load_id desc
