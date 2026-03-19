@@ -20,7 +20,7 @@ CONFIG_FILES = {
 @audited
 def get_config(**kwargs):
     """Read the layer config CSV, filter by the single data_subject + source from coordinator."""
-    from src.ingestion.config import load_csv_config, get_active_tables
+    from src.ingestion.config import load_csv_config
 
     dag_run = kwargs["dag_run"]
     conf = dag_run.conf or {}
@@ -33,12 +33,12 @@ def get_config(**kwargs):
         raise FileNotFoundError(f"Config file not found for layer '{layer}': {csv_path}")
 
     all_configs = load_csv_config(csv_path)
-    active = get_active_tables(all_configs)
 
+    filtered = all_configs
     if data_subject:
-        active = [c for c in active if c.data_subject == data_subject]
+        filtered = [c for c in filtered if c.data_subject == data_subject]
     if source:
-        active = [c for c in active if c.source_name == source]
+        filtered = [c for c in filtered if c.source_name == source]
 
     tables = [
         {
@@ -53,12 +53,13 @@ def get_config(**kwargs):
             "initial_value": c.initial_value,
             "primary_key": c.primary_key,
             "load_sequence": c.load_sequence,
+            "table_load_active": c.table_load_active,
         }
-        for c in active
+        for c in filtered
     ]
 
     print(f"[get_config] layer={layer}, data_subject={data_subject}, source={source}")
-    print(f"[get_config] Active tables: {len(tables)}")
+    print(f"[get_config] All tables: {len(tables)}")
 
     return {
         "button": conf.get("button"),

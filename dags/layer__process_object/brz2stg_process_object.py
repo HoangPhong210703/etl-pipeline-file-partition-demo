@@ -23,10 +23,12 @@ def process_object(**kwargs):
     source = conf.get("source")
     tables = conf.get("tables", [])
 
-    tables_sorted = sorted(tables, key=lambda t: int(t.get("load_sequence", 0)))
+    # Filter active tables, then sort by load_sequence
+    tables_active = [t for t in tables if t.get("table_load_active", True)]
+    tables_sorted = sorted(tables_active, key=lambda t: int(t.get("load_sequence", 0)))
 
     print(f"[process_object] layer={layer}, data_subject={data_subject}, source={source}")
-    print(f"[process_object] Tables ({len(tables_sorted)}):")
+    print(f"[process_object] Tables: {len(tables)} total, {len(tables_active)} active")
     for t in tables_sorted:
         print(f"  seq={t['load_sequence']} {t['table_name']}")
 
