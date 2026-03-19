@@ -46,7 +46,7 @@ data/bronze/{data_subject}/{source_name}/{source_schema}/{table_name}/{DD}-{MM}-
 ## Config
 
 ### CSV Columns
-`id, layer__data_subject__src, table_name, table_schema_stg, source_name, source_schema, data_subject, load_strategy, cursor_column, initial_value, primary_key, load_sequence, table_load_active`
+`id, table_name, source_name, source_schema, data_subject, load_strategy, cursor_column, initial_value, primary_key, load_sequence, table_load_active`
 
 - `table_load_active`: `1` = active, `0` = inactive
 - `load_strategy`: `full`, `incremental`, or `append`

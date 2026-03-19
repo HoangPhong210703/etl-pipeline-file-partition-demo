@@ -11,8 +11,6 @@ clean-targets: ["target", "dbt_packages"]
 
 models:
   etl_warehouse:
-    stg:
-      +schema: stg
     silver:
       +schema: sil
 

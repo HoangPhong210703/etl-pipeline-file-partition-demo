@@ -1,13 +1,17 @@
 """Ingestion DAG (parquet2postgres) — receives a single (data_subject, source) payload
-from process_object, then runs: verify_parquet → load_to_warehouse."""
+from process_object, then runs: verify_parquet → load_to_warehouse.
+
+After load_to_warehouse succeeds, emits a Dataset event for the stg schema.
+stg2sil__process_whdata is scheduled on these datasets and triggers automatically
+when all required stg schemas have been updated."""
 
 import sys
 from datetime import datetime
 from pathlib import Path
 
 from airflow import DAG  # type: ignore
+from airflow.datasets import Dataset, DatasetAlias  # type: ignore
 from airflow.operators.python import PythonOperator  # type: ignore
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator  # type: ignore
 
 sys.path.insert(0, "/opt/airflow")
 from src.ingestion.audit import audited
@@ -97,6 +101,12 @@ def load_to_warehouse(**kwargs):
     if failed:
         raise RuntimeError(f"{len(failed)} table(s) failed to load: {[r[0] for r in failed]}")
 
+    # Emit dataset event so stg2sil knows this source's stg data is ready
+    stg_alias = DatasetAlias("brz2stg-output")
+    stg_dataset = Dataset(f"stg__{data_subject}__{source}")
+    kwargs["outlet_events"][stg_alias].add(stg_dataset)
+    print(f"[brz2stg] Emitted dataset event: stg__{data_subject}__{source}")
+
 
 with DAG(
     dag_id="brz2stg_parquet2postgres_ingestion",
@@ -115,12 +125,7 @@ with DAG(
     load = PythonOperator(
         task_id="load_to_warehouse",
         python_callable=load_to_warehouse,
+        outlets=[DatasetAlias("brz2stg-output")],
     )
 
-    trigger_stg2sil = TriggerDagRunOperator(
-        task_id="trigger_stg2sil",
-        trigger_dag_id="stg2sil__process_whdata",
-        conf="{{ dag_run.conf }}",
-    )
-
-    verify >> load >> trigger_stg2sil  # type: ignore
+    verify >> load  # type: ignore

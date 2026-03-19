@@ -27,7 +27,6 @@ class SourceConfig:
 class CsvTableConfig:
     id: int
     table_name: str
-    table_schema_stg: str
     source_name: str
     source_schema: str
     data_subject: str
@@ -50,7 +49,6 @@ def load_csv_config(csv_path: Path) -> list[CsvTableConfig]:
             configs.append(CsvTableConfig(
                 id=int(row["id"]),
                 table_name=row["table_name"],
-                table_schema_stg=row["table_schema_stg"],
                 source_name=row["source_name"],
                 source_schema=row["source_schema"],
                 data_subject=row["data_subject"],

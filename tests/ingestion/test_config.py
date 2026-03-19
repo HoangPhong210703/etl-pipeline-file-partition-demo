@@ -12,15 +12,15 @@ from src.ingestion.config import (
     TableConfig,
 )
 
-CSV_HEADER = "id,table_name,table_schema_stg,source_name,source_schema,data_subject,load_strategy,cursor_column,initial_value,primary_key,load_sequence,table_load_active"
+CSV_HEADER = "id,table_name,source_name,source_schema,data_subject,load_strategy,cursor_column,initial_value,primary_key,load_sequence,table_load_active"
 
 
 @pytest.fixture
 def sample_csv(tmp_path):
     content = f"""{CSV_HEADER}
-1,users,stg__auth__test_db,test_db,public,auth,full,,,id,10,TRUE
-2,events,stg__analytics__test_db,test_db,public,analytics,incremental,created_at,2024-01-01,id,20,TRUE
-3,logs,stg__analytics__test_db,test_db,public,analytics,append,,,id,30,FALSE
+1,users,test_db,public,auth,full,,,id,10,TRUE
+2,events,test_db,public,analytics,incremental,created_at,2024-01-01,id,20,TRUE
+3,logs,test_db,public,analytics,append,,,id,30,FALSE
 """
     csv_file = tmp_path / "config.csv"
     csv_file.write_text(content)
@@ -127,8 +127,8 @@ def test_csv_to_source_configs_table_fields(sample_csv):
 
 def test_csv_to_source_configs_multiple_sources(tmp_path):
     content = f"""{CSV_HEADER}
-1,users,stg__auth__db1,db1,public,auth,full,,,id,10,TRUE
-2,orders,stg__sales__db2,db2,appdb,sales,incremental,modified,,id,10,TRUE
+1,users,db1,public,auth,full,,,id,10,TRUE
+2,orders,db2,appdb,sales,incremental,modified,,id,10,TRUE
 """
     csv_file = tmp_path / "config.csv"
     csv_file.write_text(content)
@@ -155,7 +155,7 @@ def test_load_source_configs(sample_csv):
 
 def test_csv_no_primary_key(tmp_path):
     content = f"""{CSV_HEADER}
-1,t,stg__x__db,db,public,x,full,,,,10,TRUE
+1,t,db,public,x,full,,,,10,TRUE
 """
     csv_file = tmp_path / "config.csv"
     csv_file.write_text(content)

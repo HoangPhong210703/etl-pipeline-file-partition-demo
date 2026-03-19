@@ -45,7 +45,6 @@ def get_config(**kwargs):
         {
             "id": c.id,
             "table_name": c.table_name,
-            "table_schema_stg": c.table_schema_stg,
             "source_name": c.source_name,
             "source_schema": c.source_schema,
             "data_subject": c.data_subject,

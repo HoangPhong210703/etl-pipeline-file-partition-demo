@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: stg__accounting__postgres_crm
+    schema: stg__accounting__postgres_crm
+    tables:
+      - name: account_account
+
+  - name: stg__accounting__postgres_timesheet
+    schema: stg__accounting__postgres_timesheet
+    tables:
+      - name: account_account

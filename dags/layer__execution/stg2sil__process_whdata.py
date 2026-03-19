@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from airflow import DAG  # type: ignore
+from airflow.datasets import Dataset  # type: ignore
 from airflow.operators.python import PythonOperator  # type: ignore
 
 sys.path.insert(0, "/opt/airflow")
@@ -27,6 +28,26 @@ def _setup_dbt_env():
     from src.ingestion.stg_cli import set_dbt_env_vars
     credentials = _load_warehouse_credentials()
     set_dbt_env_vars(credentials)
+
+
+@audited
+def write_dag_run_note(**kwargs):
+    """Record which dataset events triggered this stg2sil run."""
+    from airflow.settings import Session  # type: ignore
+
+    triggering_events = kwargs.get("triggering_dataset_events", {})
+    datasets = sorted(str(ds) for ds in triggering_events.keys()) if triggering_events else []
+    note_text = f"Triggered by datasets: {', '.join(datasets)}" if datasets else "Triggered manually"
+
+    session = Session()
+    try:
+        dr = session.merge(kwargs["dag_run"])
+        dr.note = note_text
+        session.commit()
+    finally:
+        session.close()
+
+    print(f"[stg2sil] {note_text}")
 
 
 @audited
@@ -68,7 +89,10 @@ def test_dbt(**kwargs):
 with DAG(
     dag_id="stg2sil__process_whdata",
     description="Run dbt models for data cleaning and standardization (stg → snapshot → silver → test)",
-    schedule=None,
+    schedule=[
+        Dataset("stg__accounting__postgres_crm"),
+        Dataset("stg__accounting__postgres_timesheet"),
+    ],
     start_date=datetime(2024, 1, 1),
     catchup=False,
     tags=["execution", "stg2sil", "dbt"],
@@ -93,4 +117,9 @@ with DAG(
         python_callable=test_dbt,
     )
 
-    dbt_stg >> dbt_snap >> dbt_silver >> dbt_test  # type: ignore
+    write_note = PythonOperator(
+        task_id="write_dag_run_note",
+        python_callable=write_dag_run_note,
+    )
+
+    write_note >> dbt_stg >> dbt_snap >> dbt_silver >> dbt_test  # type: ignore

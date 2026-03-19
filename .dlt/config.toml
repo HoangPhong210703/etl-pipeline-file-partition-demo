@@ -2,3 +2,4 @@
 disable_compression = false
 [schema]
 naming = "direct"
+allow_identifier_change_on_table_with_data = true

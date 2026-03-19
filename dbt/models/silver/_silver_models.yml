@@ -1,6 +1,27 @@
 version: 2
 
 models:
+  - name: silver__accounting__account_account
+    description: "Deduplicated chart of accounts merged from multiple Odoo sources. Incremental — only new records per load."
+    tests:
+      - unique:
+          column_name: "(id || '_' || _source)"
+    columns:
+      - name: id
+        description: "Account ID (natural key within source)"
+        tests:
+          - not_null
+      - name: _source
+        description: "Source system identifier (e.g. postgres_crm, postgres_timesheet)"
+        tests:
+          - not_null
+      - name: name
+        description: "Account name"
+      - name: code
+        description: "Account code"
+      - name: write_date
+        description: "Last modified timestamp in source"
+
   - name: silver__common__dim_date
     description: "Generated calendar dimension covering 2020-01-01 to 2030-12-31. No source dependency — built entirely from SQL generate_series."
     columns:
@@ -38,24 +59,3 @@ models:
         tests:
           - not_null
 
-  - name: silver__crm__fact_lead
-    description: "Fact table joining CRM leads to silver__customer__dim_customer (current version) and silver__common__dim_date (by create_date). Incremental on lead_id."
-    columns:
-      - name: lead_id
-        description: "Lead ID (natural key from crm_lead)"
-        tests:
-          - unique
-          - not_null
-      - name: date_key
-        description: "FK to silver__common__dim_date — derived from lead create_date"
-        tests:
-          - relationships:
-              arguments:
-                to: ref('silver__common__dim_date')
-                field: date_key
-      - name: customer_key
-        description: "FK to silver__customer__dim_customer.dbt_scd_id — current customer version at time of load"
-      - name: expected_revenue
-        description: "Expected revenue from the lead"
-      - name: prorated_revenue
-        description: "Revenue prorated by probability"

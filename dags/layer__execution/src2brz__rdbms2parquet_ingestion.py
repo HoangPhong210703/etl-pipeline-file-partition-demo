@@ -54,7 +54,6 @@ def fetch_tables(**kwargs):
         CsvTableConfig(
             id=t["id"],
             table_name=t["table_name"],
-            table_schema_stg=t["table_schema_stg"],
             source_name=t["source_name"],
             source_schema=t["source_schema"],
             data_subject=t["data_subject"],
