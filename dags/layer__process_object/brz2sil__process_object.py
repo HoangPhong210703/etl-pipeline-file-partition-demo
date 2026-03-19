@@ -57,7 +57,7 @@ with DAG(
 
     ingest_trigger = TriggerDagRunOperator(
         task_id="ingest_trigger",
-        trigger_dag_id="brz2stg__parquet2postgres_ingestion",
+        trigger_dag_id="brz2stg_parquet2postgres_ingestion",
         conf="{{ ti.xcom_pull(task_ids='process_object') }}",
     )
 
