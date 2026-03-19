@@ -1,29 +1,21 @@
 version: 2
 
 sources:
-  - name: stg__postgres_crm__crm
-    schema: stg__postgres_crm__crm
+  - name: stg__accounting__postgres_crm
+    schema: stg__accounting__postgres_crm
     tables:
       - name: project_task
-
-  - name: stg__postgres_crm__customer
-    schema: stg__postgres_crm__customer
-    tables:
       - name: res_partner
       - name: crm_lead
 
-  - name: stg__postgres_timesheet__hr
-    schema: stg__postgres_timesheet__hr
+  - name: stg__accounting__postgres_timesheet
+    schema: stg__accounting__postgres_timesheet
     tables:
       - name: account_account
-
-  - name: stg__postgres_timesheet__attendance
-    schema: stg__postgres_timesheet__attendance
-    tables:
       - name: attendance_application
       - name: attendance_summary_log
 
-  - name: stg__mariadb_erp__customer
-    schema: stg__mariadb_erp__customer
+  - name: stg__project__maria_erp
+    schema: stg__project__maria_erp
     tables:
       - name: tabCustomer
