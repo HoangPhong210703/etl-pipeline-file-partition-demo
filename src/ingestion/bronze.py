@@ -211,42 +211,91 @@ def extract_tables(
     bucket_url: str,
     credentials: str,
     data_subject: str,
-) -> None:
-    """Fetch data from RDBMS and normalize (extract + normalize step of dlt)."""
+) -> dict[str, str]:
+    """Fetch data from RDBMS and normalize (extract + normalize step of dlt).
+    
+    Extracts all tables together with retry logic (3 attempts for entire extraction).
+    Returns dict: {table_name: status} where status is 'success' or error message.
+    """
+    import time
+    
     table_configs = [t for t in source_config.tables if t.data_subject == data_subject]
-    pipeline = build_pipeline(source_config, bucket_url, data_subject)
-    first_run = _is_first_run(pipeline)
+    table_results = {}
+    max_retries = 3
+    
+    # Retry loop: up to 3 attempts (entire extraction)
+    for attempt in range(1, max_retries + 1):
+        # Create fresh pipeline for each attempt to avoid state contamination
+        pipeline = build_pipeline(source_config, bucket_url, data_subject)
+        first_run = _is_first_run(pipeline)
 
-    if first_run:
-        print(f"[{source_config.name}/{data_subject}] First run — full load")
-    else:
-        print(f"[{source_config.name}/{data_subject}] Subsequent run — configured strategies")
-
-    table_names = [t.name for t in table_configs]
-    source = sql_database(
-        credentials=credentials,
-        schema=source_config.schema,
-        table_names=table_names,
-        backend="pyarrow",
-    )
-
-    if not first_run:
-        for table_config in table_configs:
-            if table_config.load_strategy == "incremental" and table_config.cursor_column:
-                resource = source.resources[table_config.name]
-                initial_value = table_config.initial_value
-                if initial_value:
-                    initial_value = _parse_date(initial_value)
-                resource.apply_hints(
-                    incremental=dlt.sources.incremental(
-                        table_config.cursor_column,
-                        initial_value=initial_value,
-                    ),
-                )
-
-    pipeline.extract(source, write_disposition="append", loader_file_format="parquet")
-    pipeline.normalize()
+        if attempt == 1:
+            if first_run:
+                print(f"[{source_config.name}/{data_subject}] First run — full load")
+            else:
+                print(f"[{source_config.name}/{data_subject}] Subsequent run — configured strategies")
+            print(f"\n[{source_config.name}/{data_subject}] Extracting {len(table_configs)} tables:")
+        
+        try:
+            # Create source for ALL tables together
+            source = sql_database(
+                credentials=credentials,
+                schema=source_config.schema,
+                table_names=[t.name for t in table_configs],
+                backend="pyarrow",
+            )
+            
+            # Apply incremental load strategy if needed
+            for table_config in table_configs:
+                if not first_run and table_config.load_strategy == "incremental" and table_config.cursor_column:
+                    resource = source.resources[table_config.name]
+                    initial_value = table_config.initial_value
+                    if initial_value:
+                        initial_value = _parse_date(initial_value)
+                    resource.apply_hints(
+                        incremental=dlt.sources.incremental(
+                            table_config.cursor_column,
+                            initial_value=initial_value,
+                        ),
+                    )
+            
+            # Extract and normalize ALL tables at once (atomic operation)
+            write_disp = "replace" if first_run else "append"
+            pipeline.extract(source, write_disposition=write_disp, loader_file_format="parquet")
+            pipeline.normalize()
+            
+            # Log success for each table
+            for table_config in table_configs:
+                print(f"  ✓ {table_config.name}: SUCCESS")
+                table_results[table_config.name] = "success"
+            
+            break  # Success, exit retry loop
+                
+        except Exception as e:
+            error_msg = f"{type(e).__name__}: {str(e)[:80]}"
+            if attempt < max_retries:
+                print(f"  ⟳ Attempt {attempt}/{max_retries} failed, retrying in 5s... ({error_msg})")
+                time.sleep(5)  # Wait 5 seconds before retry
+            else:
+                print(f"  ✗ Extraction FAILED after {max_retries} attempts — {error_msg}")
+                for table_config in table_configs:
+                    table_results[table_config.name] = error_msg
+    
+    # Check if all tables succeeded
+    failed_tables = [t for t, status in table_results.items() if status != "success"]
+    
     print(f"[{source_config.name}/{data_subject}] Extract + normalize complete")
+    print(f"[{source_config.name}/{data_subject}] Result: {len(table_configs) - len(failed_tables)} success, {len(failed_tables)} failed\n")
+    
+    # If any table failed, fail the entire extraction
+    if failed_tables:
+        error_detail = "\n".join([f"  • {t}: {table_results[t]}" for t in failed_tables])
+        raise RuntimeError(
+            f"Extraction failed for {len(failed_tables)} table(s) in {source_config.name}__{data_subject}:\n{error_detail}\n"
+            f"All tables must succeed. Aborting extraction."
+        )
+    
+    return table_results
 
 
 def load_to_parquet(
