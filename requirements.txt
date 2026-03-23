@@ -5,3 +5,6 @@ pymysql
 pyyaml
 pytest
 dbt-postgres>=1.7.0
+yagmail
+keyring
+python-dotenv

@@ -11,7 +11,7 @@ from airflow.operators.python import PythonOperator  # type: ignore
 
 sys.path.insert(0, "/opt/airflow")
 from src.ingestion.audit import audited
-from src.ingestion.alert import notify_dag_status
+from src.ingestion.alert import dag_failure_callback, dag_success_callback
 
 SECRETS_PATH = Path("/opt/airflow/.dlt/secrets.toml")
 DBT_PROJECT_DIR = Path("/opt/airflow/dbt")
@@ -117,6 +117,8 @@ with DAG(
         Dataset("stg__accounting__postgres_timesheet"),
     ],
     start_date=datetime(2024, 1, 1),
+    on_success_callback=dag_success_callback,
+    on_failure_callback=dag_failure_callback,
     catchup=False,
     tags=["execution", "stg2sil", "dbt"],
 ) as dag:
@@ -145,10 +147,4 @@ with DAG(
         python_callable=write_dag_run_note,
     )
 
-    notify = PythonOperator(
-        task_id="notify_pipeline_status",
-        python_callable=notify_dag_status,
-        trigger_rule="all_done",
-    )
-
-    write_note >> dbt_stg >> dbt_snap >> dbt_silver >> dbt_test >> notify  # type: ignore
+    write_note >> dbt_stg >> dbt_snap >> dbt_silver >> dbt_test

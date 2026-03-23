@@ -1,4 +1,4 @@
 alert_type,recipients,active
-pipeline_failure,phihung18112005a@gmail.com.com,1
-pipeline_success,phihung18112005a@gmail.com,1
-data_freshness,phihung18112005a@gmail.com,1
+pipeline_failure,hoangphong210703@gmail.com;phihung18112005a@gmail.com,1
+pipeline_success,hoangphong210703@gmail.com;phihung18112005a@gmail.com,1
+data_freshness,hoangphong210703@gmail.com;phihung18112005a@gmail.com,1

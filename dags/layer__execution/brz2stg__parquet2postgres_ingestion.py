@@ -15,7 +15,7 @@ from airflow.operators.python import PythonOperator  # type: ignore
 
 sys.path.insert(0, "/opt/airflow")
 from src.ingestion.audit import audited
-from src.ingestion.alert import notify_dag_status
+from src.ingestion.alert import dag_failure_callback, dag_success_callback
 
 SECRETS_PATH = Path("/opt/airflow/.dlt/secrets.toml")
 BRONZE_BASE_URL = "/opt/airflow/data/bronze"
@@ -117,6 +117,8 @@ with DAG(
     description="Load parquet files into postgres warehouse for a single (data_subject, source)",
     schedule=None,
     start_date=datetime(2024, 1, 1),
+    on_success_callback=dag_success_callback,
+    on_failure_callback=dag_failure_callback,
     catchup=False,
     render_template_as_native_obj=True,
     tags=["ingestion", "brz2stg", "parquet2postgres"],
@@ -132,10 +134,4 @@ with DAG(
         outlets=[DatasetAlias("brz2stg-output")],
     )
 
-    notify = PythonOperator(
-        task_id="notify_pipeline_status",
-        python_callable=notify_dag_status,
-        trigger_rule="all_done",
-    )
-
-    verify >> load >> notify  # type: ignore
+    verify >> load

@@ -11,7 +11,7 @@ from airflow.operators.trigger_dagrun import TriggerDagRunOperator  # type: igno
 
 sys.path.insert(0, "/opt/airflow")
 from src.ingestion.audit import audited
-from src.ingestion.alert import notify_dag_status
+from src.ingestion.alert import dag_failure_callback, dag_success_callback
 
 SECRETS_PATH = Path("/opt/airflow/.dlt/secrets.toml")
 BUCKET_URL = "/opt/airflow/data/bronze"
@@ -133,6 +133,8 @@ with DAG(
     description="RDBMS to parquet for a single (data_subject, source)",
     schedule=None,
     start_date=datetime(2024, 1, 1),
+    on_success_callback=dag_success_callback,
+    on_failure_callback=dag_failure_callback,
     catchup=False,
     render_template_as_native_obj=True,
     tags=["ingestion", "rdbms2parquet"],
@@ -157,10 +159,4 @@ with DAG(
         python_callable=trigger_next_layer,
     )
 
-    notify = PythonOperator(
-        task_id="notify_pipeline_status",
-        python_callable=notify_dag_status,
-        trigger_rule="all_done",
-    )
-
-    connect >> fetch >> write >> next_layer >> notify  # type: ignore
+    connect >> fetch >> write >> next_layer
