@@ -11,13 +11,12 @@ from airflow.operators.python import PythonOperator  # type: ignore
 sys.path.insert(0, "/opt/airflow")
 from src.pipeline.audit import audited
 from src.pipeline.alert import dag_failure_callback, dag_success_callback
-from src.pipeline.credentials import load_warehouse_credentials
-from src.pipeline.settings import DBT_PROJECT_DIR
 from src.pipeline.layer_management import get_stg_datasets
 
 
 def _setup_dbt_env():
     """Load warehouse credentials and set dbt env vars."""
+    from src.pipeline.credentials import load_warehouse_credentials
     from src.pipeline.dbt_runner import set_dbt_env_vars
     set_dbt_env_vars(load_warehouse_credentials())
 
@@ -46,6 +45,7 @@ def write_dag_run_note(**kwargs):
 def run_dbt_stg(**kwargs):
     """Run dbt staging models."""
     from src.pipeline.dbt_runner import run_dbt
+    from src.pipeline.settings import DBT_PROJECT_DIR
     _setup_dbt_env()
     run_dbt(DBT_PROJECT_DIR, selectors=["stg"])
     print("[stg2sil] dbt stg models complete")
@@ -55,6 +55,7 @@ def run_dbt_stg(**kwargs):
 def run_dbt_snapshot_task(**kwargs):
     """Run dbt snapshots (SCD-2 dimensions)."""
     from src.pipeline.dbt_runner import run_dbt_snapshot
+    from src.pipeline.settings import DBT_PROJECT_DIR
     _setup_dbt_env()
     run_dbt_snapshot(DBT_PROJECT_DIR)
     print("[stg2sil] dbt snapshots complete")
@@ -64,6 +65,7 @@ def run_dbt_snapshot_task(**kwargs):
 def run_dbt_silver(**kwargs):
     """Run dbt silver models (facts + dimensions)."""
     from src.pipeline.dbt_runner import run_dbt
+    from src.pipeline.settings import DBT_PROJECT_DIR
     _setup_dbt_env()
     run_dbt(DBT_PROJECT_DIR, selectors=["silver"])
     print("[stg2sil] dbt silver models complete")
@@ -74,6 +76,7 @@ def test_dbt(**kwargs):
     """Run dbt tests and store results to meta.dbt_test_results."""
     from src.pipeline.dbt_runner import run_dbt_test, parse_dbt_results
     from src.pipeline.audit.db_logger import log_dbt_results
+    from src.pipeline.settings import DBT_PROJECT_DIR
 
     _setup_dbt_env()
     run_dbt_test(DBT_PROJECT_DIR)
@@ -100,6 +103,7 @@ def test_dbt(**kwargs):
     }
 
 
+# Dataset schedule — must be computed at module level for Airflow to register it
 _stg_dicts = get_stg_datasets()
 _datasets = [Dataset(f"stg__{d['data_subject']}__{d['source']}") for d in _stg_dicts]
 

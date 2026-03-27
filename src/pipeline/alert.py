@@ -4,13 +4,7 @@ import csv
 import os
 import traceback
 
-import keyring
-import yagmail
-from keyring.backends import null
-
 from src.pipeline.settings import ALERT_CONFIG_PATH
-
-keyring.set_keyring(null.Keyring())
 
 
 def _get_recipients(alert_type: str) -> list[str]:
@@ -44,6 +38,10 @@ def send_alert(alert_type: str, subject: str, body: str) -> None:
         return
 
     try:
+        import keyring
+        import yagmail
+        from keyring.backends import null
+        keyring.set_keyring(null.Keyring())
         yag = yagmail.SMTP(sender_email, sender_password)
         yag.send(
             to=recipients,

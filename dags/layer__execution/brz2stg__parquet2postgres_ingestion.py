@@ -11,13 +11,13 @@ from airflow.operators.python import PythonOperator  # type: ignore
 sys.path.insert(0, "/opt/airflow")
 from src.pipeline.audit import audited
 from src.pipeline.alert import dag_failure_callback, dag_success_callback
-from src.pipeline.settings import BRONZE_BASE_URL
 
 
 @audited
 def verify_parquet(**kwargs):
     """Check that parquet files exist for the tables in this (data_subject, source) pair."""
     from src.pipeline.staging import get_parquet_dir, get_latest_parquet_file
+    from src.pipeline.settings import BRONZE_BASE_URL
 
     conf = kwargs["dag_run"].conf or {}
     source = conf["source"]
@@ -53,6 +53,7 @@ def load_to_warehouse(**kwargs):
     from src.pipeline.staging import run_stg_subject, _print_stg_summary
     from src.pipeline.config import table_config_from_dict
     from src.pipeline.credentials import load_warehouse_credentials
+    from src.pipeline.settings import BRONZE_BASE_URL
 
     conf = kwargs["dag_run"].conf or {}
     source = conf["source"]
@@ -100,6 +101,10 @@ with DAG(
     tags=["ingestion", "brz2stg", "parquet2postgres"],
 ) as dag:
     verify = PythonOperator(task_id="verify_parquet", python_callable=verify_parquet)
-    load = PythonOperator(task_id="load_to_warehouse", python_callable=load_to_warehouse, outlets=[DatasetAlias("brz2stg-output")])
+    load = PythonOperator(
+        task_id="load_to_warehouse",
+        python_callable=load_to_warehouse,
+        outlets=[DatasetAlias("brz2stg-output")],
+    )
 
     verify >> load

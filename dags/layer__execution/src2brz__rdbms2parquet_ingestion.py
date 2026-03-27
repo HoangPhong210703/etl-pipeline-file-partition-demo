@@ -10,7 +10,6 @@ from airflow.operators.python import PythonOperator  # type: ignore
 sys.path.insert(0, "/opt/airflow")
 from src.pipeline.audit import audited
 from src.pipeline.alert import dag_failure_callback, dag_success_callback
-from src.pipeline.settings import BRONZE_BASE_URL as BUCKET_URL
 
 
 @audited
@@ -35,6 +34,7 @@ def fetch_tables(**kwargs):
     from src.pipeline.bronze import extract_tables
     from src.pipeline.config import csv_table_config_from_dict, csv_to_source_configs
     from src.pipeline.credentials import load_source_credentials
+    from src.pipeline.settings import BRONZE_BASE_URL
 
     conf = kwargs["dag_run"].conf or {}
     source = conf["source"]
@@ -45,7 +45,7 @@ def fetch_tables(**kwargs):
     source_config = csv_to_source_configs(table_configs)[0]
     credentials = load_source_credentials(source)
 
-    extract_tables(source_config, BUCKET_URL, credentials, data_subject)
+    extract_tables(source_config, BRONZE_BASE_URL, credentials, data_subject)
     print(f"[ingestion] All tables successfully extracted for {source}__{data_subject}")
 
 
@@ -54,6 +54,7 @@ def write_parquet(**kwargs):
     """Write normalized data to parquet files."""
     from src.pipeline.bronze import load_to_parquet
     from src.pipeline.config import SourceConfig
+    from src.pipeline.settings import BRONZE_BASE_URL
 
     conf = kwargs["dag_run"].conf or {}
     source = conf["source"]
@@ -63,7 +64,7 @@ def write_parquet(**kwargs):
 
     row_counts = load_to_parquet(
         SourceConfig(name=source, schema=source_schema, tables=[]),
-        BUCKET_URL,
+        BRONZE_BASE_URL,
         data_subject,
     )
     total = sum(row_counts.values()) if row_counts else 0

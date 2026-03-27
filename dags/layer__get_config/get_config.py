@@ -10,14 +10,13 @@ from airflow.operators.trigger_dagrun import TriggerDagRunOperator  # type: igno
 
 sys.path.insert(0, "/opt/airflow")
 from src.pipeline.audit import audited
-from src.pipeline.settings import TABLE_CONFIG_PATH
 
 
 @audited
 def get_config(**kwargs):
     """Read table_config.csv, filter by data_subject + source from coordinator."""
-
     from src.pipeline.config import load_csv_config, csv_table_config_to_dict
+    from src.pipeline.settings import TABLE_CONFIG_PATH
 
     dag_run = kwargs["dag_run"]
     conf = dag_run.conf or {}

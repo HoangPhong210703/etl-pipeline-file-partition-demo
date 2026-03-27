@@ -2,9 +2,6 @@
 
 from datetime import datetime
 
-from src.pipeline.audit.file_logger import log_to_file
-from src.pipeline.audit.db_logger import log_to_db
-
 
 def log_audit(
     run_id: str,
@@ -21,6 +18,9 @@ def log_audit(
     finished_at: datetime = None,
 ):
     """Write audit record to both file and database."""
+    from src.pipeline.audit.file_logger import log_to_file
+    from src.pipeline.audit.db_logger import log_to_db
+
     record = {
         "run_id": run_id,
         "dag_id": dag_id,
