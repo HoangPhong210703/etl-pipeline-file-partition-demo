@@ -12,6 +12,8 @@ dbt/dbt_packages/
 dbt/logs/
 .dlt/secrets.toml
 .dlt/pipelines/
-.claude
+.claude/
 pseudocode.py
 .env
+.vscode/
+.scripts/

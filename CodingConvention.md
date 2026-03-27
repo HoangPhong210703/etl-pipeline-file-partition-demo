@@ -53,8 +53,7 @@ data/bronze/{data_subject}/{source_name}/{source_schema}/{table_name}/{DD}-{MM}-
 - `load_sequence`: ascending integer, controls execution order
 
 ### Config Files
-- `config/src2brz_config.csv` — source-to-bronze layer
-- `config/brz2stg_config.csv` — bronze-to-staging layer
+- `config/table_config.csv` — all layers (src2brz + brz2stg)
 
 ### Conf Payload (passed between DAGs)
 ```python
@@ -80,7 +79,7 @@ from airflow.operators.python import PythonOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
 sys.path.insert(0, "/opt/airflow")
-from src.ingestion.audit import audited
+from src.pipeline.audit import audited
 
 @audited
 def my_task(**kwargs):
@@ -115,12 +114,12 @@ with DAG(
 - Print with prefix: `[component_name] message`
 
 ### Credentials
-Loaded from `.dlt/secrets.toml` via `tomllib`:
+Loaded via `src.pipeline.credentials` (never inline tomllib):
 ```python
-import tomllib
-with open("/opt/airflow/.dlt/secrets.toml", "rb") as f:
-    raw = tomllib.load(f)
-credentials = raw["sources"][source_name]["credentials"]
+from src.pipeline.credentials import load_source_credentials, load_warehouse_credentials
+
+credentials = load_source_credentials(source_name)
+warehouse_url = load_warehouse_credentials()
 ```
 
 ## Audit Logging
@@ -142,11 +141,21 @@ Set automatically by `@audited` decorator. Shows `Button: {dag_id}` in Airflow G
 .dlt/                          # dlt secrets & config
 config/                        # Layer config CSVs
 dags/                          # Airflow DAGs (see folder layout above)
-src/ingestion/
+src/pipeline/
+├── settings.py                # Single source of truth for all paths
 ├── config.py                  # CSV config loader (CsvTableConfig, SourceConfig, TableConfig)
+├── credentials.py             # Centralized credential loading from .dlt/secrets.toml
 ├── bronze.py                  # src2brz logic (extract, normalize, load to parquet)
-├── stg.py                     # brz2stg logic (parquet to postgres warehouse)
-├── cli.py / stg_cli.py        # CLI entry points
+├── staging.py                 # brz2stg logic (parquet to postgres warehouse)
+├── dbt_runner.py              # dbt subprocess wrappers (run_dbt, run_dbt_snapshot, etc.)
+├── freshness.py               # Data freshness checking logic
+├── dag_generator.py           # DAG file generation from dag_config.csv
+├── layer_management.py        # Layer trigger resolution
+├── retention.py               # Bronze file retention cleanup
+├── alert.py                   # Email alerting
+├── cli/
+│   ├── bronze_cli.py          # CLI entry point for bronze layer
+│   └── staging_cli.py         # CLI entry point for staging layer
 └── audit/
     ├── __init__.py            # Exports: log_audit, audited
     ├── decorator.py           # @audited decorator

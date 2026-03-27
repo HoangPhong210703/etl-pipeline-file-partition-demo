@@ -2,6 +2,7 @@ x-airflow-common: &airflow-common
   build:
     context: .
     dockerfile: Dockerfile
+  user: "0:0"
   env_file: .env
   environment:
     AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: '30'
@@ -11,6 +12,9 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__PARALLELISM: 4
     AIRFLOW__CORE__FERNET_KEY: ''
     AIRFLOW__WEBSERVER__SECRET_KEY: change-me-in-production
+    AIRFLOW__WEBSERVER__LOG_FETCH_TIMEOUT_SEC: '5'
+    AIRFLOW__LOGGING__LOGGING_CONFIG_CLASS: ''
+    AIRFLOW__CORE__HOSTNAME_CALLABLE: 'socket.getfqdn'
     AIRFLOW__SMTP__SMTP_HOST: "${SMTP_HOST:-}"
     AIRFLOW__SMTP__SMTP_PORT: "${SMTP_PORT:-587}"
     AIRFLOW__SMTP__SMTP_USER: "${SMTP_USER:-}"
@@ -75,6 +79,7 @@ services:
 
   airflow-scheduler:
     <<: *airflow-common
+    hostname: airflow-scheduler
     command: airflow scheduler
     depends_on:
       airflow-init:

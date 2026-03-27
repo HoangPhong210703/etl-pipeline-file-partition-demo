@@ -1,34 +1,25 @@
 """Execution DAG (stg2sil) — runs dbt models for data cleaning and standardization.
-Task chain: run_dbt_stg → run_dbt_snapshot → run_dbt_silver → test_dbt."""
+Task chain: write_dag_run_note → run_dbt_stg → run_dbt_snapshot → run_dbt_silver → test_dbt."""
 
 import sys
 from datetime import datetime
-from pathlib import Path
 
 from airflow import DAG  # type: ignore
 from airflow.datasets import Dataset  # type: ignore
 from airflow.operators.python import PythonOperator  # type: ignore
 
 sys.path.insert(0, "/opt/airflow")
-from src.ingestion.audit import audited
-from src.ingestion.alert import dag_failure_callback, dag_success_callback
-
-SECRETS_PATH = Path("/opt/airflow/.dlt/secrets.toml")
-DBT_PROJECT_DIR = Path("/opt/airflow/dbt")
-
-
-def _load_warehouse_credentials() -> str:
-    import tomllib
-    with open(SECRETS_PATH, "rb") as f:
-        raw = tomllib.load(f)
-    return raw["destinations"]["warehouse"]["credentials"]
+from src.pipeline.audit import audited
+from src.pipeline.alert import dag_failure_callback, dag_success_callback
+from src.pipeline.credentials import load_warehouse_credentials
+from src.pipeline.settings import DBT_PROJECT_DIR
+from src.pipeline.layer_management import get_stg_datasets
 
 
 def _setup_dbt_env():
     """Load warehouse credentials and set dbt env vars."""
-    from src.ingestion.stg_cli import set_dbt_env_vars
-    credentials = _load_warehouse_credentials()
-    set_dbt_env_vars(credentials)
+    from src.pipeline.dbt_runner import set_dbt_env_vars
+    set_dbt_env_vars(load_warehouse_credentials())
 
 
 @audited
@@ -54,16 +45,16 @@ def write_dag_run_note(**kwargs):
 @audited
 def run_dbt_stg(**kwargs):
     """Run dbt staging models."""
-    from src.ingestion.stg_cli import run_dbt
+    from src.pipeline.dbt_runner import run_dbt
     _setup_dbt_env()
     run_dbt(DBT_PROJECT_DIR, selectors=["stg"])
     print("[stg2sil] dbt stg models complete")
 
 
 @audited
-def run_dbt_snapshot(**kwargs):
+def run_dbt_snapshot_task(**kwargs):
     """Run dbt snapshots (SCD-2 dimensions)."""
-    from src.ingestion.stg_cli import run_dbt_snapshot
+    from src.pipeline.dbt_runner import run_dbt_snapshot
     _setup_dbt_env()
     run_dbt_snapshot(DBT_PROJECT_DIR)
     print("[stg2sil] dbt snapshots complete")
@@ -72,7 +63,7 @@ def run_dbt_snapshot(**kwargs):
 @audited
 def run_dbt_silver(**kwargs):
     """Run dbt silver models (facts + dimensions)."""
-    from src.ingestion.stg_cli import run_dbt
+    from src.pipeline.dbt_runner import run_dbt
     _setup_dbt_env()
     run_dbt(DBT_PROJECT_DIR, selectors=["silver"])
     print("[stg2sil] dbt silver models complete")
@@ -81,8 +72,8 @@ def run_dbt_silver(**kwargs):
 @audited
 def test_dbt(**kwargs):
     """Run dbt tests and store results to meta.dbt_test_results."""
-    from src.ingestion.stg_cli import run_dbt_test, parse_dbt_results
-    from src.ingestion.audit.db_logger import log_dbt_results
+    from src.pipeline.dbt_runner import run_dbt_test, parse_dbt_results
+    from src.pipeline.audit.db_logger import log_dbt_results
 
     _setup_dbt_env()
     run_dbt_test(DBT_PROJECT_DIR)
@@ -109,42 +100,23 @@ def test_dbt(**kwargs):
     }
 
 
+_stg_dicts = get_stg_datasets()
+_datasets = [Dataset(f"stg__{d['data_subject']}__{d['source']}") for d in _stg_dicts]
+
 with DAG(
     dag_id="stg2sil__process_whdata",
     description="Run dbt models for data cleaning and standardization (stg → snapshot → silver → test)",
-    schedule=[
-        Dataset("stg__accounting__postgres_crm"),
-        Dataset("stg__accounting__postgres_timesheet"),
-    ],
+    schedule=_datasets if _datasets else None,
     start_date=datetime(2024, 1, 1),
     on_success_callback=dag_success_callback,
     on_failure_callback=dag_failure_callback,
     catchup=False,
     tags=["execution", "stg2sil", "dbt"],
 ) as dag:
-    dbt_stg = PythonOperator(
-        task_id="run_dbt_stg",
-        python_callable=run_dbt_stg,
-    )
-
-    dbt_snap = PythonOperator(
-        task_id="run_dbt_snapshot",
-        python_callable=run_dbt_snapshot,
-    )
-
-    dbt_silver = PythonOperator(
-        task_id="run_dbt_silver",
-        python_callable=run_dbt_silver,
-    )
-
-    dbt_test = PythonOperator(
-        task_id="test_dbt",
-        python_callable=test_dbt,
-    )
-
-    write_note = PythonOperator(
-        task_id="write_dag_run_note",
-        python_callable=write_dag_run_note,
-    )
+    dbt_stg = PythonOperator(task_id="run_dbt_stg", python_callable=run_dbt_stg)
+    dbt_snap = PythonOperator(task_id="run_dbt_snapshot", python_callable=run_dbt_snapshot_task)
+    dbt_silver = PythonOperator(task_id="run_dbt_silver", python_callable=run_dbt_silver)
+    dbt_test = PythonOperator(task_id="test_dbt", python_callable=test_dbt)
+    write_note = PythonOperator(task_id="write_dag_run_note", python_callable=write_dag_run_note)
 
     write_note >> dbt_stg >> dbt_snap >> dbt_silver >> dbt_test

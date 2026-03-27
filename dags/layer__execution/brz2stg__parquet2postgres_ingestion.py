@@ -1,37 +1,23 @@
-"""Ingestion DAG (parquet2postgres) — receives a single (data_subject, source) payload
-from process_object, then runs: verify_parquet → load_to_warehouse.
-
-After load_to_warehouse succeeds, emits a Dataset event for the stg schema.
-stg2sil__process_whdata is scheduled on these datasets and triggers automatically
-when all required stg schemas have been updated."""
+"""Execution DAG (brz2stg) — loads parquet files into postgres warehouse
+for a single (data_subject, source) pair."""
 
 import sys
 from datetime import datetime
-from pathlib import Path
 
 from airflow import DAG  # type: ignore
 from airflow.datasets import Dataset, DatasetAlias  # type: ignore
 from airflow.operators.python import PythonOperator  # type: ignore
 
 sys.path.insert(0, "/opt/airflow")
-from src.ingestion.audit import audited
-from src.ingestion.alert import dag_failure_callback, dag_success_callback
-
-SECRETS_PATH = Path("/opt/airflow/.dlt/secrets.toml")
-BRONZE_BASE_URL = "/opt/airflow/data/bronze"
-
-
-def _load_warehouse_credentials() -> str:
-    import tomllib
-    with open(SECRETS_PATH, "rb") as f:
-        raw = tomllib.load(f)
-    return raw["destinations"]["warehouse"]["credentials"]
+from src.pipeline.audit import audited
+from src.pipeline.alert import dag_failure_callback, dag_success_callback
+from src.pipeline.settings import BRONZE_BASE_URL
 
 
 @audited
 def verify_parquet(**kwargs):
     """Check that parquet files exist for the tables in this (data_subject, source) pair."""
-    from src.ingestion.stg import get_parquet_dir, get_latest_parquet_file
+    from src.pipeline.staging import get_parquet_dir, get_latest_parquet_file
 
     conf = kwargs["dag_run"].conf or {}
     source = conf["source"]
@@ -63,29 +49,19 @@ def verify_parquet(**kwargs):
 
 @audited
 def load_to_warehouse(**kwargs):
-    """Load latest parquet files into warehouse using stg.py."""
-    from src.ingestion.stg import run_stg_subject, _print_stg_summary
-    from src.ingestion.config import TableConfig
+    """Load latest parquet files into warehouse."""
+    from src.pipeline.staging import run_stg_subject, _print_stg_summary
+    from src.pipeline.config import table_config_from_dict
+    from src.pipeline.credentials import load_warehouse_credentials
 
     conf = kwargs["dag_run"].conf or {}
     source = conf["source"]
     data_subject = conf["data_subject"]
     tables = conf.get("tables", [])
 
-    table_configs = [
-        TableConfig(
-            name=t["table_name"],
-            load_strategy=t["load_strategy"],
-            data_subject=t["data_subject"],
-            cursor_column=t.get("cursor_column") or None,
-            initial_value=t.get("initial_value") or None,
-            primary_key=[t["primary_key"]] if t.get("primary_key") else None,
-        )
-        for t in tables
-    ]
-
+    table_configs = [table_config_from_dict(t) for t in tables]
     source_schema = tables[0]["source_schema"] if tables else "public"
-    warehouse_credentials = _load_warehouse_credentials()
+    warehouse_credentials = load_warehouse_credentials()
 
     results = run_stg_subject(
         source_name=source,
@@ -123,15 +99,7 @@ with DAG(
     render_template_as_native_obj=True,
     tags=["ingestion", "brz2stg", "parquet2postgres"],
 ) as dag:
-    verify = PythonOperator(
-        task_id="verify_parquet",
-        python_callable=verify_parquet,
-    )
-
-    load = PythonOperator(
-        task_id="load_to_warehouse",
-        python_callable=load_to_warehouse,
-        outlets=[DatasetAlias("brz2stg-output")],
-    )
+    verify = PythonOperator(task_id="verify_parquet", python_callable=verify_parquet)
+    load = PythonOperator(task_id="load_to_warehouse", python_callable=load_to_warehouse, outlets=[DatasetAlias("brz2stg-output")])
 
     verify >> load

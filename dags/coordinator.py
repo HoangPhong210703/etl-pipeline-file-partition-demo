@@ -7,7 +7,7 @@ from airflow.operators.trigger_dagrun import TriggerDagRunOperator  # type: igno
 from airflow.exceptions import AirflowSkipException  # type: ignore
 
 sys.path.insert(0, "/opt/airflow")
-from src.ingestion.audit import audited
+from src.pipeline.audit import audited
 
 
 @audited
@@ -52,7 +52,7 @@ with DAG(
 
     get_config_trigger = TriggerDagRunOperator(
         task_id="get_config_trigger",
-        trigger_dag_id="{{ ti.xcom_pull(task_ids='coor')['layer'] }}_get_config",
+        trigger_dag_id="get_config",
         conf="{{ ti.xcom_pull(task_ids='coor') }}",
     )
 
