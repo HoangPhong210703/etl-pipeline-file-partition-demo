@@ -11,7 +11,9 @@ with DAG(
     catchup=False,
     tags=["generator"],
 ) as dag:
+    
     generate_dags = BashOperator(
         task_id="generate_dags_from_config",
-        bash_command="python /opt/airflow/dags/dag_init_script.py",
+        # Đã sửa lại tên file thành dag_generator.py
+        bash_command="python /opt/airflow/src/utils/dag_generator.py", 
     )

@@ -8,8 +8,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # --- Constants ---
 # Use relative paths from the project root
-PROJECT_ROOT = Path(__file__).parent.parent
-CONFIG_PATH = PROJECT_ROOT / "config" / "dag_config.csv"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+CONFIG_PATH = Path("/opt/airflow/config/dag_config.csv")
 DAGS_OUTPUT_DIR = PROJECT_ROOT / "dags" / "layer__data_subject__src"
 
 # --- DAG File Template ---
